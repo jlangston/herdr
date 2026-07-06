@@ -720,6 +720,7 @@ mod tests {
                     anchor: crate::api::schema::PaneTextPoint { row: 0, col: 0 },
                     cursor: crate::api::schema::PaneTextPoint { row: 0, col: 7 },
                     content_revision: Some(u64::MAX),
+                    copied: None,
                 }),
             },
         );

@@ -196,6 +196,7 @@ fn client_mouse_selection_highlights_and_copies_through_endpoint_extraction() {
                 && params.anchor == crate::api::schema::PaneTextPoint { row: 0, col: 0 }
                 && params.cursor == crate::api::schema::PaneTextPoint { row: 0, col: 2 }
                 && params.content_revision.is_none()
+                && params.copied == Some(true)
     ));
 
     let (repaint, actions) = state.handle_endpoint_result(
