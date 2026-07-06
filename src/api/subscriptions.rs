@@ -158,6 +158,7 @@ impl ActiveSubscription {
                 Ok(event_subscription(EventKind::PaneAgentDetected))
             }
             Subscription::LayoutUpdated {} => Ok(event_subscription(EventKind::LayoutUpdated)),
+            Subscription::ClipboardCopied {} => Ok(event_subscription(EventKind::ClipboardCopied)),
             Subscription::PaneOutputMatched {
                 pane_id,
                 source,
@@ -719,6 +720,33 @@ mod tests {
         assert_eq!(data.pane_id, "pane_1");
         assert_eq!(data.workspace_id, "workspace_1");
         assert_eq!(data.scroll, scrolled_back);
+    }
+
+    #[test]
+    fn clipboard_copied_subscription_delivers_matching_event() {
+        let event_hub = EventHub::default();
+        let mut subscription = ActiveEventSubscription {
+            event_kind: EventKind::ClipboardCopied,
+            last_sequence: 0,
+        };
+
+        // A non-matching event is skipped without emitting.
+        event_hub.push(presentation_event(None));
+        assert!(subscription.poll(&event_hub).is_none());
+
+        event_hub.push(EventEnvelope {
+            event: EventKind::ClipboardCopied,
+            data: EventData::ClipboardCopied {
+                text: "copied text".into(),
+                truncated: false,
+            },
+        });
+
+        let event = subscription
+            .poll(&event_hub)
+            .expect("clipboard copied event delivered");
+        assert_eq!(event["event"], "clipboard_copied");
+        assert_eq!(event["data"]["text"], "copied text");
     }
 
     #[test]

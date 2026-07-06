@@ -18,6 +18,14 @@ use super::{api_helpers::pane_agent_status, App, Mode, OverlayPaneState, ToastKi
 use crate::events::AppEvent;
 
 const API_NOTIFICATION_RATE_LIMIT: Duration = Duration::from_secs(1);
+
+/// Upper bound on the copied text carried by a `clipboard.copied` event.
+///
+/// The event JSON is delivered to plugin `[[events]]` hooks through an
+/// environment variable, and Linux caps a single environment string at
+/// ~128 KiB (`MAX_ARG_STRLEN`). Capping the text at 64 KiB leaves ample room
+/// for the surrounding JSON envelope and the rest of the process environment.
+const CLIPBOARD_EVENT_MAX_BYTES: usize = 64 * 1024;
 #[cfg(windows)]
 const WINDOWS_POWERSHELL_AGENT_EXIT_RESPAWN_GRACE: Duration = Duration::from_secs(2);
 
@@ -770,6 +778,27 @@ impl App {
         });
     }
 
+    /// Emit a `clipboard.copied` event for the given clipboard payload so
+    /// plugins and API subscribers can observe copies. Headless servers have no
+    /// system clipboard, so this server-side signal is the only way plugins
+    /// (e.g. clipboard history) can capture copied text.
+    ///
+    /// All clipboard writes herdr performs funnel through the
+    /// `AppEvent::ClipboardWrite` channel — chrome selections (mouse release,
+    /// copy-mode `y`, double-click token) and OSC 52 writes from pane children —
+    /// so a single emission point here covers every copy source.
+    pub(crate) fn emit_clipboard_copied_event(&mut self, content: &[u8]) {
+        let lossy = String::from_utf8_lossy(content);
+        let (text, truncated) = truncate_clipboard_event_text(&lossy);
+        self.emit_event(crate::api::schema::EventEnvelope {
+            event: crate::api::schema::EventKind::ClipboardCopied,
+            data: crate::api::schema::EventData::ClipboardCopied {
+                text: text.to_string(),
+                truncated,
+            },
+        });
+    }
+
     pub(crate) fn sync_focus_events(&mut self) {
         self.sync_focus_events_with_outer_event(None);
     }
@@ -1293,6 +1322,19 @@ impl App {
     }
 }
 
+/// Cap clipboard text at [`CLIPBOARD_EVENT_MAX_BYTES`], truncating on a UTF-8
+/// char boundary. Returns the (possibly shortened) text and whether it was cut.
+fn truncate_clipboard_event_text(text: &str) -> (&str, bool) {
+    if text.len() <= CLIPBOARD_EVENT_MAX_BYTES {
+        return (text, false);
+    }
+    let mut end = CLIPBOARD_EVENT_MAX_BYTES;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (&text[..end], true)
+}
+
 fn sanitized_notification_text(value: &str, max_chars: usize) -> Option<String> {
     let mut sanitized = String::new();
     let mut previous_space = false;
@@ -1369,6 +1411,24 @@ pub(super) mod test_support {
 mod tests {
     use super::*;
     use crate::detect::{Agent, AgentState};
+
+    #[test]
+    fn truncate_clipboard_event_text_leaves_short_text_untouched() {
+        let (text, truncated) = truncate_clipboard_event_text("short");
+        assert_eq!(text, "short");
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn truncate_clipboard_event_text_caps_at_char_boundary() {
+        // Multi-byte chars straddling the cap must not be split.
+        let input = "é".repeat(CLIPBOARD_EVENT_MAX_BYTES);
+        let (text, truncated) = truncate_clipboard_event_text(&input);
+        assert!(truncated);
+        assert!(text.len() <= CLIPBOARD_EVENT_MAX_BYTES);
+        // The slice is valid UTF-8 (never panics) and only contains whole chars.
+        assert!(text.chars().all(|c| c == 'é'));
+    }
 
     #[cfg(unix)]
     fn init_repo(path: &std::path::Path) {

@@ -230,6 +230,7 @@ impl ClientShellState {
                                 col: cursor.1,
                             },
                             content_revision: Some(content_revision),
+                            copied: None,
                         })
                     })
                     .flatten();
@@ -287,6 +288,7 @@ impl ClientShellState {
                         col: cursor.1,
                     },
                     content_revision,
+                    copied: Some(true),
                 },
             ),
             PendingEndpointKind::SelectionCopy,
@@ -328,6 +330,7 @@ impl ClientShellState {
                         col: hit.inner_rect.width.saturating_sub(1),
                     },
                     content_revision,
+                    copied: None,
                 },
             ),
             PendingEndpointKind::WordSelection {

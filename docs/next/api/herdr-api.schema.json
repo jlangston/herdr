@@ -723,6 +723,25 @@
                 "layout"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "const": "clipboard_copied",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "text"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -753,7 +772,8 @@
             "pane_exited",
             "pane_agent_detected",
             "pane_agent_status_changed",
-            "layout_updated"
+            "layout_updated",
+            "clipboard_copied"
           ],
           "type": "string"
         },
@@ -3223,6 +3243,13 @@
                 "null"
               ]
             },
+            "copied": {
+              "description": "When true, the caller writes the returned text to its host clipboard,\nso the server emits a `clipboard.copied` event for plugins and API\nsubscribers. Servers without this field's support ignore it; the copy\nitself is unaffected.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
             "cursor": {
               "$ref": "#/schemas/request/$defs/PaneTextPoint"
             },
@@ -4326,6 +4353,18 @@
               "properties": {
                 "type": {
                   "const": "layout.updated",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "clipboard.copied",
                   "type": "string"
                 }
               },
@@ -7493,6 +7532,25 @@
                 "layout"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "const": "clipboard_copied",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "text"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -7538,7 +7596,8 @@
             "pane_exited",
             "pane_agent_detected",
             "pane_agent_status_changed",
-            "layout_updated"
+            "layout_updated",
+            "clipboard_copied"
           ],
           "type": "string"
         },

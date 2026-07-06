@@ -299,7 +299,7 @@ fn client_double_click_selects_and_copies_endpoint_row_word() {
     assert!(matches!(
         &request.method,
         crate::api::schema::Method::PaneSelectionRead(params)
-            if params.anchor.col == 0 && params.cursor.col == 3
+            if params.anchor.col == 0 && params.cursor.col == 3 && params.copied == Some(true)
     ));
     let (_, actions) = state.handle_endpoint_result(
         "boot-1",

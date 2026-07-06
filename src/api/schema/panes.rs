@@ -261,6 +261,12 @@ pub struct PaneSelectionReadParams {
     pub cursor: PaneTextPoint,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_revision: Option<u64>,
+    /// When true, the caller writes the returned text to its host clipboard,
+    /// so the server emits a `clipboard.copied` event for plugins and API
+    /// subscribers. Servers without this field's support ignore it; the copy
+    /// itself is unaffected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copied: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
