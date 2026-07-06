@@ -255,13 +255,20 @@ impl App {
         params: PaneSelectionReadParams,
     ) -> String {
         match self.pane_selection_text(&params) {
-            Ok(text) => encode_success(
-                id,
-                ResponseResult::PaneSelection {
-                    pane_id: params.pane_id,
-                    text,
-                },
-            ),
+            Ok(text) => {
+                // The endpoint client writes this text to its host clipboard;
+                // surface the copy to plugins and API subscribers.
+                if params.copied == Some(true) && !text.is_empty() {
+                    self.emit_clipboard_copied_event(text.as_bytes());
+                }
+                encode_success(
+                    id,
+                    ResponseResult::PaneSelection {
+                        pane_id: params.pane_id,
+                        text,
+                    },
+                )
+            }
             Err((code, message)) => encode_error(id, code, message),
         }
     }
@@ -2431,6 +2438,7 @@ mod tests {
             anchor: crate::api::schema::PaneTextPoint { row: 0, col: 0 },
             cursor: crate::api::schema::PaneTextPoint { row: 0, col: 4 },
             content_revision: Some(revision),
+            copied: None,
         };
         assert_eq!(
             app.pane_selection_text(&params).unwrap_err().0,
@@ -2447,6 +2455,55 @@ mod tests {
                 text: "hello".into(),
             }
         );
+        // A plain read is not a copy and must not emit a clipboard event.
+        assert!(!app.event_hub.events_after(0).iter().any(|(_, event)| {
+            matches!(event.event, crate::api::schema::EventKind::ClipboardCopied)
+        }));
+    }
+
+    #[tokio::test]
+    async fn api_pane_selection_read_with_copied_flag_emits_clipboard_event() {
+        let (mut app, public_pane_id) = app_with_test_workspace();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        app.state.insert_test_runtime(
+            pane_id,
+            crate::terminal::TerminalRuntime::test_with_scrollback_bytes(
+                20,
+                5,
+                1000,
+                b"hello world",
+            ),
+        );
+
+        let response = app.handle_pane_selection_read(
+            "req".into(),
+            PaneSelectionReadParams {
+                pane_id: public_pane_id.clone(),
+                anchor: crate::api::schema::PaneTextPoint { row: 0, col: 0 },
+                cursor: crate::api::schema::PaneTextPoint { row: 0, col: 4 },
+                content_revision: None,
+                copied: Some(true),
+            },
+        );
+
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(
+            success.result,
+            ResponseResult::PaneSelection {
+                pane_id: public_pane_id,
+                text: "hello".into(),
+            }
+        );
+        let copied_text = app
+            .event_hub
+            .events_after(0)
+            .into_iter()
+            .find_map(|(_, event)| match event.data {
+                crate::api::schema::EventData::ClipboardCopied { text, .. } => Some(text),
+                _ => None,
+            })
+            .expect("clipboard.copied event");
+        assert_eq!(copied_text, "hello");
     }
 
     #[tokio::test]

@@ -349,6 +349,9 @@ impl HeadlessServer {
                 // the foreground client instead of broadcasting to every attached client.
                 let data = base64::engine::general_purpose::STANDARD.encode(content.as_slice());
                 self.send_to_foreground_client(ServerMessage::Clipboard { data });
+                // Surface the copy to plugins and API subscribers. The server has no
+                // system clipboard, so this is the only place copied text is observable.
+                self.app.emit_clipboard_copied_event(content);
                 false
             }
             AppEvent::StateChanged { pane_id, agent, .. } => {
