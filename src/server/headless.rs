@@ -2010,6 +2010,7 @@ impl HeadlessServer {
                 if self.send_to_foreground_client(ServerMessage::Clipboard { data }) {
                     self.app.show_clipboard_feedback();
                 }
+                self.app.emit_clipboard_copied_event(content);
                 true
             }
             AppEvent::PrefixInputSource { active } => {

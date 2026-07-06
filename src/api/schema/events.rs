@@ -80,6 +80,8 @@ pub enum Subscription {
     PaneScrollChanged { pane_id: String },
     #[serde(rename = "layout.updated")]
     LayoutUpdated {},
+    #[serde(rename = "clipboard.copied")]
+    ClipboardCopied {},
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -215,6 +217,7 @@ pub enum EventKind {
     PaneAgentDetected,
     PaneAgentStatusChanged,
     LayoutUpdated,
+    ClipboardCopied,
 }
 
 impl EventKind {
@@ -245,6 +248,7 @@ impl EventKind {
             EventKind::PaneAgentDetected => "pane.agent_detected",
             EventKind::PaneAgentStatusChanged => "pane.agent_status_changed",
             EventKind::LayoutUpdated => "layout.updated",
+            EventKind::ClipboardCopied => "clipboard.copied",
         }
     }
 }
@@ -276,6 +280,7 @@ pub const KNOWN_EVENT_KINDS: &[EventKind] = &[
     EventKind::PaneAgentDetected,
     EventKind::PaneAgentStatusChanged,
     EventKind::LayoutUpdated,
+    EventKind::ClipboardCopied,
 ];
 
 pub const PLUGIN_HOOK_EVENT_KINDS: &[EventKind] = &[
@@ -300,6 +305,7 @@ pub const PLUGIN_HOOK_EVENT_KINDS: &[EventKind] = &[
     EventKind::PaneExited,
     EventKind::PaneAgentDetected,
     EventKind::PaneAgentStatusChanged,
+    EventKind::ClipboardCopied,
 ];
 
 #[cfg(test)]
@@ -349,6 +355,45 @@ mod known_event_name_tests {
         assert!(!names.contains(&"workspace.metadata_updated"));
         assert!(!names.contains(&"pane.updated"));
         assert!(names.contains(&"pane.moved"));
+    }
+
+    #[test]
+    fn clipboard_copied_event_kind_is_registered() {
+        assert_eq!(EventKind::ClipboardCopied.dot_name(), "clipboard.copied");
+        assert!(known_event_names().contains(&"clipboard.copied"));
+        assert!(plugin_hook_event_names().contains(&"clipboard.copied"));
+    }
+
+    #[test]
+    fn clipboard_copied_event_omits_untruncated_flag() {
+        let json = serde_json::to_value(EventEnvelope {
+            event: EventKind::ClipboardCopied,
+            data: EventData::ClipboardCopied {
+                text: "hello".into(),
+                truncated: false,
+            },
+        })
+        .unwrap();
+        assert_eq!(json["event"], "clipboard_copied");
+        assert_eq!(json["data"]["type"], "clipboard_copied");
+        assert_eq!(json["data"]["text"], "hello");
+        assert!(
+            json["data"].get("truncated").is_none(),
+            "truncated should be omitted when false"
+        );
+    }
+
+    #[test]
+    fn clipboard_copied_event_serializes_truncated_flag() {
+        let json = serde_json::to_value(EventEnvelope {
+            event: EventKind::ClipboardCopied,
+            data: EventData::ClipboardCopied {
+                text: "hello".into(),
+                truncated: true,
+            },
+        })
+        .unwrap();
+        assert_eq!(json["data"]["truncated"], true);
     }
 }
 
@@ -536,5 +581,10 @@ pub enum EventData {
     },
     LayoutUpdated {
         layout: super::panes::PaneLayoutSnapshot,
+    },
+    ClipboardCopied {
+        text: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        truncated: bool,
     },
 }

@@ -179,6 +179,8 @@ impl App {
                     context.focused_pane_id = Some(pane_id.clone());
                     context
                 }),
+            // Copies are not tied to a pane or workspace; use the active-workspace context.
+            EventData::ClipboardCopied { .. } => self.current_plugin_context(correlation_id),
         }
     }
 

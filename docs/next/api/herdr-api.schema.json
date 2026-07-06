@@ -678,6 +678,25 @@
                 "layout"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "const": "clipboard_copied",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "text"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -707,7 +726,8 @@
             "pane_exited",
             "pane_agent_detected",
             "pane_agent_status_changed",
-            "layout_updated"
+            "layout_updated",
+            "clipboard_copied"
           ],
           "type": "string"
         },
@@ -3614,6 +3634,18 @@
                 "type"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "clipboard.copied",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -6392,6 +6424,25 @@
                 "layout"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "const": "clipboard_copied",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "text"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -6436,7 +6487,8 @@
             "pane_exited",
             "pane_agent_detected",
             "pane_agent_status_changed",
-            "layout_updated"
+            "layout_updated",
+            "clipboard_copied"
           ],
           "type": "string"
         },
