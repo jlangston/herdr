@@ -58,6 +58,8 @@ struct ClientLoopConfig {
     host_cursor: crate::config::HostCursorModeConfig,
     kitty_graphics_enabled: bool,
     mouse_capture_active: bool,
+    /// Mouse-active lone-escape flush timeout (ms), from `[ui] escape_time_ms`.
+    escape_time_ms: i32,
     #[cfg(unix)]
     remote_image_paste_key: Option<(crossterm::event::KeyCode, crossterm::event::KeyModifiers)>,
 }
@@ -68,6 +70,8 @@ struct ClientState {
     blit_encoder: render_ansi::BlitEncoder,
     /// Whether host mouse capture is currently active.
     mouse_capture_active: bool,
+    /// Mouse-active lone-escape flush timeout (ms).
+    escape_time_ms: i32,
     /// The terminal size we reported to the server in our last Hello/Resize.
     reported_size: (u16, u16),
     /// Client-local sound playback config, refreshed on server request.
@@ -1112,6 +1116,7 @@ fn run_client_with_mode(
     let loaded_config = crate::config::Config::load();
     crate::terminal_modes::clear_host_mouse_reporting(&mut io::stdout())?;
     let mouse_capture = loaded_config.config.ui.mouse_capture;
+    let escape_time_ms = loaded_config.config.ui.escape_time_ms() as i32;
     let mouse_scroll_lines = loaded_config.config.ui.mouse_scroll_lines();
     let redraw_on_focus_gained = loaded_config.config.ui.redraw_on_focus_gained;
     let host_cursor = loaded_config.config.ui.host_cursor;
@@ -1127,6 +1132,7 @@ fn run_client_with_mode(
         host_cursor,
         kitty_graphics_enabled,
         mouse_capture_active: mouse_capture,
+        escape_time_ms,
         #[cfg(unix)]
         remote_image_paste_key,
     };
@@ -1284,6 +1290,7 @@ async fn run_client_loop(
     let mut state = ClientState {
         blit_encoder: render_ansi::BlitEncoder::new(),
         mouse_capture_active: config.mouse_capture_active,
+        escape_time_ms: config.escape_time_ms,
         reported_size: (cols, rows),
         sound_config: config.sound_config,
         kitty_graphics_enabled: config.kitty_graphics_enabled,
@@ -1307,12 +1314,14 @@ async fn run_client_loop(
     let stdin_quit = should_quit.clone();
     let stdin_tx = event_tx.clone();
     let stdin_mouse_capture_active = host_mouse_capture_active.clone();
+    let stdin_escape_time_ms = state.escape_time_ms;
     std::thread::spawn(move || {
         input::stdin_reader_loop(
             stdin_tx,
             &stdin_quit,
             will_query_host_terminal_theme,
             stdin_mouse_capture_active,
+            stdin_escape_time_ms,
         );
     });
 

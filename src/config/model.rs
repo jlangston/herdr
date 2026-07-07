@@ -11,6 +11,19 @@ use super::{
 
 pub const MAX_TOAST_DELAY_SECONDS: u64 = 3600;
 
+/// Default mouse-active lone-escape flush timeout, in milliseconds. Derived
+/// from the built-in `raw_input::MOUSE_ACTIVE_LONE_ESCAPE_FLUSH_TIMEOUT_MS`, so
+/// leaving `[ui] escape_time_ms` unset preserves the built-in behavior exactly
+/// and the two stay in sync.
+pub const DEFAULT_ESCAPE_TIME_MS: u64 =
+    crate::raw_input::MOUSE_ACTIVE_LONE_ESCAPE_FLUSH_TIMEOUT_MS as u64;
+/// Escape timeouts below this are meaningless: a lone Escape already flushes
+/// after `raw_input::RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS` (10ms) when the mouse is
+/// idle, so `escape_time_ms` is clamped up to this floor.
+const MIN_ESCAPE_TIME_MS: u64 = 10;
+/// Escape timeouts above this would make Escape feel broken; clamped down.
+const MAX_ESCAPE_TIME_MS: u64 = 2000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateChannelConfig {
@@ -786,6 +799,11 @@ pub struct UiConfig {
     pub mobile_width_threshold: u16,
     /// Capture mouse input for Herdr's mouse UI. Default: true.
     pub mouse_capture: bool,
+    /// Milliseconds to wait after a lone ESC for the rest of an escape
+    /// sequence before delivering a bare Escape, while mouse capture is
+    /// active. Lower is snappier (e.g. for vim); higher tolerates slow
+    /// terminals or links. Default: 150. Clamped to 10..=2000.
+    pub escape_time_ms: u64,
     /// Host cursor policy. Default: auto.
     pub host_cursor: HostCursorModeConfig,
     /// Modifier that lets right-click gestures pass through to pane apps. Empty disables it.
@@ -989,6 +1007,7 @@ impl Default for UiConfig {
             sidebar_collapsed_mode: SidebarCollapsedModeConfig::Compact,
             mobile_width_threshold: DEFAULT_MOBILE_WIDTH_THRESHOLD,
             mouse_capture: true,
+            escape_time_ms: DEFAULT_ESCAPE_TIME_MS,
             host_cursor: HostCursorModeConfig::Auto,
             right_click_passthrough_modifier: RightClickPassthroughModifierConfig::default(),
             redraw_on_focus_gained: true,
@@ -1012,6 +1031,12 @@ impl UiConfig {
         self.mouse_scroll_lines
             .map(NonZeroUsize::get)
             .unwrap_or(DEFAULT_MOUSE_SCROLL_LINES)
+    }
+
+    /// Mouse-active lone-escape flush timeout, clamped to a usable range.
+    pub fn escape_time_ms(&self) -> u64 {
+        self.escape_time_ms
+            .clamp(MIN_ESCAPE_TIME_MS, MAX_ESCAPE_TIME_MS)
     }
 
     pub fn right_click_passthrough_modifiers(&self) -> Option<KeyModifiers> {
@@ -1378,6 +1403,22 @@ mouse_capture = false
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert!(!config.ui.mouse_capture);
+    }
+
+    #[test]
+    fn escape_time_ms_default_and_clamp() {
+        let default_config = Config::default();
+        assert_eq!(default_config.ui.escape_time_ms, DEFAULT_ESCAPE_TIME_MS);
+        assert_eq!(default_config.ui.escape_time_ms(), DEFAULT_ESCAPE_TIME_MS);
+
+        let parsed: Config = toml::from_str("[ui]\nescape_time_ms = 25\n").unwrap();
+        assert_eq!(parsed.ui.escape_time_ms(), 25);
+
+        // Out-of-range values clamp into the usable window.
+        let too_small: Config = toml::from_str("[ui]\nescape_time_ms = 1\n").unwrap();
+        assert_eq!(too_small.ui.escape_time_ms(), MIN_ESCAPE_TIME_MS);
+        let too_big: Config = toml::from_str("[ui]\nescape_time_ms = 99999\n").unwrap();
+        assert_eq!(too_big.ui.escape_time_ms(), MAX_ESCAPE_TIME_MS);
     }
 
     #[test]

@@ -40,10 +40,15 @@ pub fn stdin_reader_loop(
     should_quit: &Arc<AtomicBool>,
     host_color_query_sent: bool,
     host_mouse_capture_active: Arc<AtomicBool>,
+    mouse_active_escape_timeout_ms: i32,
 ) {
     #[cfg(windows)]
     {
-        let _ = (host_color_query_sent, host_mouse_capture_active);
+        let _ = (
+            host_color_query_sent,
+            host_mouse_capture_active,
+            mouse_active_escape_timeout_ms,
+        );
         windows_stdin_reader_loop(event_tx, should_quit);
     }
 
@@ -53,6 +58,7 @@ pub fn stdin_reader_loop(
         should_quit,
         host_color_query_sent,
         host_mouse_capture_active,
+        mouse_active_escape_timeout_ms,
     );
 }
 
@@ -62,6 +68,7 @@ fn unix_stdin_reader_loop(
     should_quit: &Arc<AtomicBool>,
     host_color_query_sent: bool,
     host_mouse_capture_active: Arc<AtomicBool>,
+    mouse_active_escape_timeout_ms: i32,
 ) {
     let stdin = io::stdin();
     let mut reader = stdin.lock();
@@ -88,6 +95,7 @@ fn unix_stdin_reader_loop(
                 let timeout_ms = idle_flush_timeout_ms(
                     &framer,
                     host_mouse_capture_active.load(Ordering::Acquire),
+                    mouse_active_escape_timeout_ms,
                 );
                 if stdin_read_ready(&reader, timeout_ms) == Some(false) {
                     let had_pending = framer.has_pending_input();
@@ -132,9 +140,10 @@ fn unix_stdin_reader_loop(
 fn idle_flush_timeout_ms(
     framer: &crate::raw_input::RawInputByteFramer,
     host_mouse_capture_active: bool,
+    mouse_active_escape_timeout_ms: i32,
 ) -> i32 {
     if host_mouse_capture_active && framer.has_pending_lone_escape() {
-        crate::raw_input::MOUSE_ACTIVE_LONE_ESCAPE_FLUSH_TIMEOUT_MS
+        mouse_active_escape_timeout_ms
     } else {
         crate::raw_input::RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS
     }
@@ -406,13 +415,21 @@ mod tests {
         let mut framer = crate::raw_input::RawInputByteFramer::default();
         assert!(framer.push(b"\x1b").is_empty());
 
+        let default_ms = crate::raw_input::MOUSE_ACTIVE_LONE_ESCAPE_FLUSH_TIMEOUT_MS;
         assert_eq!(
-            idle_flush_timeout_ms(&framer, false),
+            idle_flush_timeout_ms(&framer, false, default_ms),
             crate::raw_input::RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS
         );
         assert_eq!(
-            idle_flush_timeout_ms(&framer, true),
+            idle_flush_timeout_ms(&framer, true, default_ms),
             crate::raw_input::MOUSE_ACTIVE_LONE_ESCAPE_FLUSH_TIMEOUT_MS
+        );
+        // A configured (shorter) timeout flows through when the mouse is active.
+        assert_eq!(idle_flush_timeout_ms(&framer, true, 25), 25);
+        // ...but the fast idle path still wins when the mouse is idle.
+        assert_eq!(
+            idle_flush_timeout_ms(&framer, false, 25),
+            crate::raw_input::RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS
         );
         let mouse_timeout_ms =
             std::hint::black_box(crate::raw_input::MOUSE_ACTIVE_LONE_ESCAPE_FLUSH_TIMEOUT_MS);
