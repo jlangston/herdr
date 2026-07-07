@@ -906,6 +906,12 @@
           "description": "Automatically copy text selected by mouse drag or double-click. When disabled, Ctrl+C or a host-forwarded Cmd+C copies and clears the retained selection."
         },
         {
+          "key": "ui.escape_time_ms",
+          "type": "integer",
+          "default": "150",
+          "description": "Milliseconds to wait after a lone ESC for the rest of an escape sequence before delivering a bare Escape, while mouse capture is active. Lower is snappier (e.g. for vim); higher tolerates slow terminals or links. Clamped to 10..=2000."
+        },
+        {
           "key": "ui.host_cursor",
           "type": "enum",
           "default": "auto",

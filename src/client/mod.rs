@@ -160,6 +160,7 @@ fn run_client_with_mode(
             .with_local_endpoint(&socket_path)
     });
     let mouse_capture = loaded_config.config.ui.mouse_capture;
+    let escape_time_ms = loaded_config.config.ui.escape_time_ms() as i32;
     let mouse_scroll_lines = loaded_config.config.ui.mouse_scroll_lines();
     let redraw_on_focus_gained = loaded_config.config.ui.redraw_on_focus_gained;
     let host_cursor = loaded_config.config.ui.host_cursor;
@@ -180,6 +181,7 @@ fn run_client_with_mode(
         pixel_geometry_fallback: kitty_graphics_enabled,
         mouse_capture_active: mouse_capture,
         endpoint_keybindings,
+        escape_time_ms,
         remote_image_paste_key,
         shell_config,
     };
@@ -384,6 +386,7 @@ async fn run_client_loop(
         direct_keyboard_protocol: crate::terminal_modes::DirectHostKeyboardState::default(),
         pane_keyboard_report_all: false,
         keyboard_report_all_active: false,
+        escape_time_ms: config.escape_time_ms,
         reported_size: (cols, rows),
         reported_cell_size: (initial_cell_width_px, initial_cell_height_px),
         sound_config: config.sound_config,
@@ -459,6 +462,7 @@ async fn run_client_loop(
         .lock()
         .map(|matcher| matcher.active_handle())
         .unwrap_or_default();
+    let stdin_escape_time_ms = state.escape_time_ms;
     std::thread::spawn(move || {
         input::stdin_reader_loop(
             stdin_tx,
@@ -471,6 +475,7 @@ async fn run_client_loop(
             stdin_direct_response,
             #[cfg(unix)]
             stdin_direct_response_active,
+            stdin_escape_time_ms,
         );
     });
 

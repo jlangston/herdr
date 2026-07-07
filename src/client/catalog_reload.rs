@@ -122,6 +122,7 @@ mod tests {
             direct_keyboard_protocol: Default::default(),
             pane_keyboard_report_all: false,
             keyboard_report_all_active: false,
+            escape_time_ms: crate::raw_input::MOUSE_ACTIVE_ESCAPE_SEQUENCE_FLUSH_TIMEOUT_MS,
             reported_size: (100, 30),
             reported_cell_size: (0, 0),
             sound_config: Default::default(),

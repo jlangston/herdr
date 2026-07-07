@@ -257,6 +257,11 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # or Cmd+C when the host forwards it, copies and clears it.
 # copy_on_select = true
 
+# Milliseconds to wait after a lone Escape (while mouse capture is on) before
+# treating it as a bare Escape rather than the start of a mouse/escape sequence.
+# Lower it if Escape feels laggy in vim; raise it for slow terminals or links.
+# escape_time_ms = 150
+
 # Host cursor policy: "auto", "native", or "drawn".
 # "auto" draws Herdr's own cursor on native Windows builds and WSL to avoid ConPTY cursor flicker, and uses the native terminal cursor elsewhere.
 # "native" always uses the outer terminal cursor. "drawn" always draws Herdr's cursor as terminal cell content.
