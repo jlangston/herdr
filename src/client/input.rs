@@ -47,6 +47,7 @@ pub fn stdin_reader_loop(
     initial_host_input: Vec<u8>,
     #[cfg(unix)] direct_response: Arc<std::sync::Mutex<super::direct_graphics::ResponseMatcher>>,
     #[cfg(unix)] direct_response_active: Arc<AtomicBool>,
+    mouse_active_escape_timeout_ms: i32,
 ) {
     #[cfg(windows)]
     {
@@ -55,6 +56,7 @@ pub fn stdin_reader_loop(
             host_cell_size_query_sent,
             host_mouse_capture_active,
             host_sgr_pixels_active,
+            mouse_active_escape_timeout_ms,
         );
         let _ = (host_escape_disambiguation_active, initial_host_input);
         windows_stdin_reader_loop(event_tx, should_quit, host_color_query_sent);
@@ -73,6 +75,7 @@ pub fn stdin_reader_loop(
         initial_host_input,
         direct_response,
         direct_response_active,
+        mouse_active_escape_timeout_ms,
     );
 }
 
@@ -89,6 +92,7 @@ fn unix_stdin_reader_loop(
     initial_host_input: Vec<u8>,
     direct_response: Arc<std::sync::Mutex<super::direct_graphics::ResponseMatcher>>,
     direct_response_active: Arc<AtomicBool>,
+    mouse_active_escape_timeout_ms: i32,
 ) {
     let stdin = io::stdin();
     let mut reader = stdin.lock();
@@ -126,7 +130,11 @@ fn unix_stdin_reader_loop(
         if (framer.has_pending_input() || !pending_palette.is_empty())
             && stdin_read_ready(
                 &reader,
-                idle_flush_timeout_ms(&framer, host_mouse_capture_active.load(Ordering::Acquire)),
+                idle_flush_timeout_ms(
+                    &framer,
+                    host_mouse_capture_active.load(Ordering::Acquire),
+                    mouse_active_escape_timeout_ms,
+                ),
             ) == Some(false)
         {
             let had_pending = framer.has_pending_input();
@@ -231,6 +239,7 @@ fn unix_stdin_reader_loop(
                 let timeout_ms = idle_flush_timeout_ms(
                     &framer,
                     host_mouse_capture_active.load(Ordering::Acquire),
+                    mouse_active_escape_timeout_ms,
                 );
                 if stdin_read_ready(&reader, timeout_ms) == Some(false) {
                     let had_pending = framer.has_pending_input();
@@ -375,12 +384,13 @@ fn flush_unix_palette_input(
 fn idle_flush_timeout_ms(
     framer: &crate::raw_input::RawInputByteFramer,
     host_mouse_capture_active: bool,
+    mouse_active_escape_timeout_ms: i32,
 ) -> i32 {
     if !host_mouse_capture_active {
         return crate::raw_input::RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS;
     }
     if framer.has_pending_lone_escape() || framer.has_pending_incomplete_mouse_sequence() {
-        crate::raw_input::MOUSE_ACTIVE_ESCAPE_SEQUENCE_FLUSH_TIMEOUT_MS
+        mouse_active_escape_timeout_ms
     } else if framer.has_pending_csi_introducer() {
         // A mouse report split after ESC[ is still ambiguous with legacy Alt+[.
         crate::raw_input::MOUSE_ACTIVE_CSI_INTRODUCER_FLUSH_TIMEOUT_MS
@@ -804,8 +814,11 @@ mod tests {
         gap: std::time::Duration,
         next: &[u8],
     ) -> Vec<Vec<u8>> {
-        let first_wait =
-            std::time::Duration::from_millis(idle_flush_timeout_ms(framer, mouse_capture) as u64);
+        let first_wait = std::time::Duration::from_millis(idle_flush_timeout_ms(
+            framer,
+            mouse_capture,
+            crate::raw_input::MOUSE_ACTIVE_ESCAPE_SEQUENCE_FLUSH_TIMEOUT_MS,
+        ) as u64);
         let mut chunks = Vec::new();
         if gap >= first_wait {
             chunks.extend(framer.flush_timeout());
@@ -1070,24 +1083,34 @@ mod tests {
         let mut unrelated = crate::raw_input::RawInputByteFramer::default();
         assert!(unrelated.push(b"\x1b[49:33;2:").is_empty());
 
+        let default_ms = crate::raw_input::MOUSE_ACTIVE_ESCAPE_SEQUENCE_FLUSH_TIMEOUT_MS;
         for framer in [&escape, &csi, &sgr_mouse, &default_mouse, &unrelated] {
             assert_eq!(
-                idle_flush_timeout_ms(framer, false),
+                idle_flush_timeout_ms(framer, false, default_ms),
                 crate::raw_input::RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS
             );
         }
         for framer in [&escape, &sgr_mouse, &default_mouse] {
             assert_eq!(
-                idle_flush_timeout_ms(framer, true),
+                idle_flush_timeout_ms(framer, true, default_ms),
                 crate::raw_input::MOUSE_ACTIVE_ESCAPE_SEQUENCE_FLUSH_TIMEOUT_MS
             );
         }
         assert_eq!(
-            idle_flush_timeout_ms(&csi, true),
+            idle_flush_timeout_ms(&csi, true, default_ms),
             crate::raw_input::MOUSE_ACTIVE_CSI_INTRODUCER_FLUSH_TIMEOUT_MS
         );
         assert_eq!(
-            idle_flush_timeout_ms(&unrelated, true),
+            idle_flush_timeout_ms(&unrelated, true, default_ms),
+            crate::raw_input::RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS
+        );
+        // A configured (shorter) timeout flows through when the mouse is active.
+        assert_eq!(idle_flush_timeout_ms(&escape, true, 25), 25);
+        assert_eq!(idle_flush_timeout_ms(&sgr_mouse, true, 25), 25);
+        assert_eq!(idle_flush_timeout_ms(&default_mouse, true, 25), 25);
+        // ...but the fast idle path still wins when the mouse is idle.
+        assert_eq!(
+            idle_flush_timeout_ms(&escape, false, 25),
             crate::raw_input::RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS
         );
 

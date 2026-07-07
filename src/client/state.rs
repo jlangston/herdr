@@ -45,6 +45,8 @@ pub(super) struct ClientState {
     pub(super) direct_keyboard_protocol: crate::terminal_modes::DirectHostKeyboardState,
     pub(super) pane_keyboard_report_all: bool,
     pub(super) keyboard_report_all_active: bool,
+    /// Mouse-active escape-sequence flush timeout (ms), from `[ui] escape_time_ms`.
+    pub(super) escape_time_ms: i32,
     pub(super) reported_size: (u16, u16),
     pub(super) reported_cell_size: (u32, u32),
     pub(super) sound_config: crate::config::SoundConfig,
@@ -99,6 +101,7 @@ impl ClientState {
         Self {
             blit_encoder: render_ansi::BlitEncoder::new(),
             image_files: image_files::FileTransport::default(),
+            escape_time_ms: crate::raw_input::MOUSE_ACTIVE_ESCAPE_SEQUENCE_FLUSH_TIMEOUT_MS,
             mouse_capture_active: false,
             endpoint_mouse_capture_requested: false,
             endpoint_sgr_pixels_requested: false,
