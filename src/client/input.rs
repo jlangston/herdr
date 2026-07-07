@@ -47,6 +47,7 @@ pub fn stdin_reader_loop(
     initial_host_input: Vec<u8>,
     #[cfg(unix)] direct_response: Arc<std::sync::Mutex<super::direct_graphics::ResponseMatcher>>,
     #[cfg(unix)] direct_response_active: Arc<AtomicBool>,
+    mouse_active_escape_timeout_ms: i32,
 ) {
     #[cfg(windows)]
     {
@@ -55,6 +56,7 @@ pub fn stdin_reader_loop(
             host_cell_size_query_sent,
             host_mouse_capture_active,
             host_sgr_pixels_active,
+            mouse_active_escape_timeout_ms,
         );
         let _ = (host_escape_disambiguation_active, initial_host_input);
         windows_stdin_reader_loop(event_tx, should_quit, host_color_query_sent);
@@ -73,6 +75,7 @@ pub fn stdin_reader_loop(
         initial_host_input,
         direct_response,
         direct_response_active,
+        mouse_active_escape_timeout_ms,
     );
 }
 
@@ -89,12 +92,14 @@ fn unix_stdin_reader_loop(
     initial_host_input: Vec<u8>,
     direct_response: Arc<std::sync::Mutex<super::direct_graphics::ResponseMatcher>>,
     direct_response_active: Arc<AtomicBool>,
+    mouse_active_escape_timeout_ms: i32,
 ) {
     let stdin = io::stdin();
     let mut reader = stdin.lock();
     let mut scratch = [0u8; 4096];
     let mut framer = crate::raw_input::RawInputByteFramer::for_host_input();
     framer.set_host_escape_disambiguation_active(host_escape_disambiguation_active);
+    framer.set_mouse_active_escape_timeout_ms(mouse_active_escape_timeout_ms);
     if host_color_query_sent {
         framer.host_color_query_sent();
         framer.enable_host_color_scheme_change_tracking();
@@ -886,6 +891,24 @@ mod tests {
                 );
             }
         }
+
+        // A configured (shorter) timeout tunes only the lone-ESC hold; the
+        // CSI and in-sequence windows keep their built-in values.
+        let mut tuned = crate::raw_input::RawInputByteFramer::default();
+        tuned.set_mouse_active_escape_timeout_ms(25);
+        assert!(tuned.push(b"\x1b").is_empty());
+        assert_eq!(tuned.idle_flush_timeout_ms(true), 25);
+        assert_eq!(
+            tuned.idle_flush_timeout_ms(false),
+            crate::raw_input::RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS
+        );
+        let mut tuned_csi = crate::raw_input::RawInputByteFramer::default();
+        tuned_csi.set_mouse_active_escape_timeout_ms(25);
+        assert!(tuned_csi.push(b"\x1b[").is_empty());
+        assert_eq!(
+            tuned_csi.idle_flush_timeout_ms(true),
+            crate::raw_input::MOUSE_ACTIVE_CSI_INTRODUCER_FLUSH_TIMEOUT_MS
+        );
 
         let mouse_timeout_ms =
             std::hint::black_box(crate::raw_input::MOUSE_ACTIVE_ESCAPE_SEQUENCE_FLUSH_TIMEOUT_MS);
