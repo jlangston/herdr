@@ -228,6 +228,9 @@ pub(crate) struct RawInputByteFramer {
     host_escape_disambiguation_active: bool,
     #[cfg(unix)]
     awaiting_mouse_tail_after: Option<usize>,
+    /// Override for the mouse-active lone-ESC hold, from `[ui] escape_time_ms`.
+    #[cfg(any(unix, test))]
+    mouse_active_escape_timeout_ms: Option<i32>,
 }
 
 const HOST_COLOR_QUERY_REPLIES: u16 = 258;
@@ -419,6 +422,11 @@ impl RawInputByteFramer {
         self.host_escape_disambiguation_active = active;
     }
 
+    #[cfg(any(unix, test))]
+    pub(crate) fn set_mouse_active_escape_timeout_ms(&mut self, timeout_ms: i32) {
+        self.mouse_active_escape_timeout_ms = Some(timeout_ms);
+    }
+
     /// Pending bytes that could still be a key on their own: a lone ESC or ESC
     /// plus one introducer. Legacy hosts send those for Escape and Alt+key, and
     /// host text bindings (e.g. Ghostty `text:\x1bO`) send them even when the
@@ -445,7 +453,9 @@ impl RawInputByteFramer {
                 return RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS;
             }
             return match self.buffer.as_slice() {
-                [ESC] => MOUSE_ACTIVE_ESCAPE_SEQUENCE_FLUSH_TIMEOUT_MS,
+                [ESC] => self
+                    .mouse_active_escape_timeout_ms
+                    .unwrap_or(MOUSE_ACTIVE_ESCAPE_SEQUENCE_FLUSH_TIMEOUT_MS),
                 // A mouse report split after ESC[ is still ambiguous with legacy Alt+[.
                 b"\x1b[" => MOUSE_ACTIVE_CSI_INTRODUCER_FLUSH_TIMEOUT_MS,
                 _ => RAW_INPUT_IDLE_FLUSH_TIMEOUT_MS,
