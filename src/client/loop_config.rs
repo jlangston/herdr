@@ -10,6 +10,8 @@ pub(super) struct ClientLoopConfig {
     pub(super) pixel_geometry_fallback: bool,
     pub(super) mouse_capture_active: bool,
     pub(super) endpoint_keybindings: bool,
+    /// Mouse-active escape-sequence flush timeout (ms), from `[ui] escape_time_ms`.
+    pub(super) escape_time_ms: i32,
     pub(super) remote_image_paste_key:
         Option<(crossterm::event::KeyCode, crossterm::event::KeyModifiers)>,
     pub(super) shell_config: Option<shell::ClientShellConfig>,
