@@ -113,6 +113,64 @@ impl ClientShellState {
         self.reconcile_input_source();
     }
 
+    /// SSH machines from the catalog, in sidebar order (Local excluded).
+    pub(super) fn settings_machines(&self) -> impl Iterator<Item = &ClientShellEndpoint> {
+        self.endpoints
+            .iter()
+            .filter(|endpoint| !endpoint.endpoint_id.is_local())
+    }
+
+    /// Flips a machine's persisted enabled flag. The row updates optimistically;
+    /// the catalog reload confirms it and other clients follow within a second.
+    pub(super) fn toggle_machine_enabled(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        outcome: &mut ClientShellInput,
+    ) {
+        let ClientEndpointId::Ssh(profile_id) = endpoint_id else {
+            return;
+        };
+        let enabled = self.endpoint_status(endpoint_id) != Some(ClientEndpointStatus::Disabled);
+        self.set_endpoint_status(
+            endpoint_id,
+            if enabled {
+                ClientEndpointStatus::Disabled
+            } else {
+                ClientEndpointStatus::Connecting
+            },
+        );
+        outcome.actions.push(ClientShellAction::SetMachineEnabled {
+            profile_id: profile_id.clone(),
+            enabled: !enabled,
+        });
+    }
+
+    /// Drops a machine's reconnect backoff and attempts a connection now.
+    /// Only meaningful while the machine is between connections.
+    pub(super) fn retry_machine_connection(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        outcome: &mut ClientShellInput,
+    ) {
+        if !matches!(
+            self.endpoint_status(endpoint_id),
+            Some(
+                ClientEndpointStatus::Connecting
+                    | ClientEndpointStatus::Reconnecting
+                    | ClientEndpointStatus::Attention
+            )
+        ) {
+            return;
+        }
+        // Optimistic; the supervisor confirms with its next status event.
+        self.set_endpoint_status(endpoint_id, ClientEndpointStatus::Connecting);
+        outcome
+            .actions
+            .push(ClientShellAction::RetryMachineConnection {
+                endpoint_id: endpoint_id.clone(),
+            });
+    }
+
     pub(crate) fn retire_endpoint(&mut self, endpoint_id: &ClientEndpointId) {
         self.clear_machine_diagnostic(endpoint_id);
         if endpoint_id == &self.active_endpoint_id {

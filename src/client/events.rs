@@ -26,6 +26,15 @@ pub(super) enum ClientLoopEvent {
     EndpointSupervisor(endpoint::EndpointSupervisorEvent),
     EndpointCatalog(Result<Vec<endpoint::SavedSshEndpoint>, String>),
     HostPower(crate::platform::HostPowerEvent),
+    /// Persist a machine's enabled flag to the endpoint catalog and apply it.
+    SetMachineEnabled {
+        profile_id: endpoint::ProfileId,
+        enabled: bool,
+    },
+    /// Drop a machine's reconnect backoff and attempt a connection now.
+    RetryEndpoint {
+        endpoint_id: endpoint::ClientEndpointId,
+    },
     ActivateEndpoint {
         endpoint_id: endpoint::ClientEndpointId,
         target: Option<shell::ClientEndpointFocusTarget>,
