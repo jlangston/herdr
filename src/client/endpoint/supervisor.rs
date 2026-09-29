@@ -134,6 +134,21 @@ impl EndpointSupervisors {
         retired
     }
 
+    /// Drops an endpoint's backoff and schedules an immediate connection
+    /// attempt. Returns false when the endpoint is unknown (disabled or
+    /// removed) or a connection attempt is already in flight.
+    pub(crate) fn retry_now(&mut self, endpoint_id: &ClientEndpointId, now: Instant) -> bool {
+        let Some(state) = self.endpoints.get_mut(endpoint_id) else {
+            return false;
+        };
+        if state.in_flight {
+            return false;
+        }
+        state.attempts = 0;
+        state.next_attempt = Some(now);
+        true
+    }
+
     pub(crate) fn spawn_due(
         &mut self,
         now: Instant,
@@ -381,6 +396,30 @@ mod tests {
             session: "agents".into(),
             enabled: true,
         }
+    }
+
+    #[test]
+    fn retry_now_drops_backoff_and_schedules_an_immediate_attempt() {
+        let now = Instant::now();
+        let profile = profile();
+        let id = ClientEndpointId::Ssh(profile.id.clone());
+        let mut supervisors = EndpointSupervisors::new(&[profile], now);
+        let state = supervisors.endpoints.get_mut(&id).unwrap();
+        state.attempts = 5;
+        state.next_attempt = Some(now + Duration::from_secs(120));
+        assert!(supervisors.retry_now(&id, now));
+        let state = &supervisors.endpoints[&id];
+        assert_eq!(state.attempts, 0);
+        assert_eq!(state.next_attempt, Some(now));
+
+        // An in-flight attempt is left alone.
+        supervisors.endpoints.get_mut(&id).unwrap().in_flight = true;
+        supervisors.endpoints.get_mut(&id).unwrap().next_attempt = None;
+        assert!(!supervisors.retry_now(&id, now));
+        assert_eq!(supervisors.endpoints[&id].next_attempt, None);
+
+        // Unknown (disabled or removed) endpoints report failure.
+        assert!(!supervisors.retry_now(&ClientEndpointId::Local, now));
     }
 
     #[test]

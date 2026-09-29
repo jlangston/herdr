@@ -1805,6 +1805,17 @@ impl ClientShellState {
                 if !self.config.mouse_capture {
                     return;
                 }
+                let machine = self
+                    .hits
+                    .machines
+                    .iter()
+                    .find(|hit| super::contains(hit.rect, point))
+                    .map(|hit| hit.endpoint_id.clone());
+                if let Some(endpoint_id) = machine {
+                    self.open_machine_context_menu(endpoint_id, mouse.column, mouse.row);
+                    outcome.repaint = true;
+                    return;
+                }
                 let workspace_id = (!self.sidebar_collapsed)
                     .then(|| self.active_endpoint_workspace_at(point))
                     .flatten();

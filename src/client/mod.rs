@@ -805,6 +805,56 @@ async fn run_client_loop(
 
         match event {
             ClientLoopEvent::EndpointCatalog(reload) => pending_catalog = Some(reload),
+            ClientLoopEvent::SetMachineEnabled {
+                profile_id,
+                enabled,
+            } => {
+                // Mirror `herdr machine enable|disable`: persist the flag to the
+                // shared catalog, then apply it to this client through the same
+                // path the catalog watcher uses. Other clients and the CLI pick
+                // the change up from the file.
+                let stored = endpoint::EndpointCatalog::load().and_then(|mut catalog| {
+                    if !catalog.set_enabled(&profile_id, enabled) {
+                        return Ok(None);
+                    }
+                    catalog.store_profiles()?;
+                    if catalog.selected_profile.is_none() {
+                        // Disabling the selected machine clears the selection.
+                        catalog.store_selection()?;
+                    }
+                    Ok(Some(catalog.ssh))
+                });
+                match stored {
+                    Ok(Some(profiles)) => pending_catalog = Some(Ok(profiles)),
+                    Ok(None) => {}
+                    Err(error) => {
+                        warn!(%error, "failed to update machine enabled state");
+                        if let Some(shell) = state.shell.as_mut() {
+                            shell.receive_endpoint_unavailable(format!(
+                                "machine update failed: {error}"
+                            ));
+                        }
+                    }
+                }
+            }
+            ClientLoopEvent::RetryEndpoint { endpoint_id } => {
+                if !supervisors.retry_now(&endpoint_id, now) {
+                    continue;
+                }
+                if let Some(shell) = state.shell.as_mut() {
+                    shell.set_endpoint_status(
+                        &endpoint_id,
+                        endpoint::ClientEndpointStatus::Connecting,
+                    );
+                }
+                if let Some(frame) = state
+                    .shell
+                    .as_mut()
+                    .and_then(|shell| shell.compose(state.reported_size.0, state.reported_size.1))
+                {
+                    state.present_frame(frame);
+                }
+            }
             #[cfg(unix)]
             ClientLoopEvent::StdinInput(data) => {
                 let image_bridge_active = endpoint_accepts_local_images(

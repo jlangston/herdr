@@ -38,6 +38,18 @@ pub(super) fn dispatch_client_shell_actions(
                     force: false,
                 });
             }
+            shell::ClientShellAction::SetMachineEnabled {
+                profile_id,
+                enabled,
+            } => {
+                *scheduled_activation = Some(ClientLoopEvent::SetMachineEnabled {
+                    profile_id,
+                    enabled,
+                });
+            }
+            shell::ClientShellAction::RetryMachineConnection { endpoint_id } => {
+                *scheduled_activation = Some(ClientLoopEvent::RetryEndpoint { endpoint_id });
+            }
             shell::ClientShellAction::OpenSafeWebUrl(url) => {
                 if crate::app::actions::safe_web_url(&url).is_some() {
                     match crate::platform::open_url(&url) {
