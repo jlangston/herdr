@@ -3020,3 +3020,223 @@ fn navigator_foreign_workspace_heading_keeps_the_workspace_target() {
         }] if activated == &endpoint_id && workspace_id == "ws_1"
     ));
 }
+
+#[test]
+fn machine_context_menu_offers_state_dependent_actions() {
+    let (mut state, remote) = state_with_remote();
+
+    // Online: just the disable toggle.
+    state.open_machine_context_menu(remote.clone(), 4, 2);
+    let items = match state.overlay.as_ref() {
+        Some(ClientShellOverlay::ContextMenu(menu)) => menu.items(),
+        _ => panic!("machine context menu"),
+    };
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].label, "Disable connection");
+    state.overlay = None;
+
+    // Stuck in attention: retry first, then the toggle.
+    state.set_endpoint_status(&remote, ClientEndpointStatus::Attention);
+    state.open_machine_context_menu(remote.clone(), 4, 2);
+    let items = match state.overlay.as_ref() {
+        Some(ClientShellOverlay::ContextMenu(menu)) => menu.items(),
+        _ => panic!("machine context menu"),
+    };
+    assert_eq!(
+        items.iter().map(|item| item.label).collect::<Vec<_>>(),
+        ["Retry connection", "Disable connection"]
+    );
+    state.overlay = None;
+
+    // Disabled: only the enable entry.
+    let mut profile = remote_profile();
+    profile.enabled = false;
+    state.set_endpoint_catalog(&[profile]);
+    state.open_machine_context_menu(remote.clone(), 4, 2);
+    let items = match state.overlay.as_ref() {
+        Some(ClientShellOverlay::ContextMenu(menu)) => menu.items(),
+        _ => panic!("machine context menu"),
+    };
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].label, "Enable connection");
+    state.overlay = None;
+
+    // Local has no catalog entry and never opens a machine menu.
+    state.open_machine_context_menu(ClientEndpointId::Local, 4, 2);
+    assert!(state.overlay.is_none());
+}
+
+#[test]
+fn machine_context_menu_retry_and_toggle_dispatch_client_actions() {
+    let (mut state, remote) = state_with_remote();
+    state.set_endpoint_status(&remote, ClientEndpointStatus::Attention);
+
+    state.open_machine_context_menu(remote.clone(), 4, 2);
+    let mut outcome = ClientShellInput::default();
+    state.activate_context_menu_item(0, &mut outcome);
+    assert!(matches!(
+        &outcome.actions[..],
+        [ClientShellAction::RetryMachineConnection { endpoint_id }] if endpoint_id == &remote
+    ));
+    assert_eq!(
+        state.endpoint_status(&remote),
+        Some(ClientEndpointStatus::Connecting)
+    );
+
+    // Connecting is retryable, so the toggle is the second entry.
+    state.open_machine_context_menu(remote.clone(), 4, 2);
+    let mut outcome = ClientShellInput::default();
+    state.activate_context_menu_item(1, &mut outcome);
+    assert!(matches!(
+        &outcome.actions[..],
+        [ClientShellAction::SetMachineEnabled { enabled: false, .. }]
+    ));
+    assert_eq!(
+        state.endpoint_status(&remote),
+        Some(ClientEndpointStatus::Disabled)
+    );
+
+    state.open_machine_context_menu(remote.clone(), 4, 2);
+    let mut outcome = ClientShellInput::default();
+    state.activate_context_menu_item(0, &mut outcome);
+    assert!(matches!(
+        &outcome.actions[..],
+        [ClientShellAction::SetMachineEnabled { enabled: true, .. }]
+    ));
+    assert_eq!(
+        state.endpoint_status(&remote),
+        Some(ClientEndpointStatus::Connecting)
+    );
+}
+
+#[test]
+fn right_click_on_machine_row_opens_its_context_menu() {
+    let (mut state, remote) = state_with_remote();
+    state.set_endpoint_status(&remote, ClientEndpointStatus::Reconnecting);
+    state.compose(106, 20).expect("composed frame");
+    let hit = state
+        .hits
+        .machines
+        .iter()
+        .find(|hit| hit.endpoint_id == remote)
+        .expect("remote machine row");
+    let (column, row) = (hit.rect.x + 2, hit.rect.y);
+    let outcome =
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Right),
+            column,
+            row,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    assert!(outcome.actions.is_empty());
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
+            target: ClientContextMenuTarget::Machine {
+                ref endpoint_id,
+                enabled: true,
+                retryable: true,
+            },
+            ..
+        })) if endpoint_id == &remote
+    ));
+}
+
+#[test]
+fn settings_machines_section_toggles_and_retries_without_a_mouse() {
+    let (mut state, remote) = state_with_remote();
+    state.set_endpoint_status(&remote, ClientEndpointStatus::Attention);
+    state.open_settings_overlay();
+    let mut outcome = ClientShellInput::default();
+    state.select_settings_section(ClientSettingsSection::Machines, &mut outcome);
+
+    // `r` drops the backoff on the selected stuck machine.
+    let mut outcome = ClientShellInput::default();
+    assert!(state.route_settings_key(
+        &crate::input::TerminalKey::new(KeyCode::Char('r'), KeyModifiers::NONE),
+        &mut outcome,
+    ));
+    assert!(matches!(
+        &outcome.actions[..],
+        [ClientShellAction::RetryMachineConnection { endpoint_id }] if endpoint_id == &remote
+    ));
+    assert_eq!(
+        state.endpoint_status(&remote),
+        Some(ClientEndpointStatus::Connecting)
+    );
+
+    // Enter disables the selected machine.
+    let mut outcome = ClientShellInput::default();
+    assert!(state.route_settings_key(
+        &crate::input::TerminalKey::new(KeyCode::Enter, KeyModifiers::NONE),
+        &mut outcome,
+    ));
+    assert!(matches!(
+        &outcome.actions[..],
+        [ClientShellAction::SetMachineEnabled { enabled: false, .. }]
+    ));
+    assert_eq!(
+        state.endpoint_status(&remote),
+        Some(ClientEndpointStatus::Disabled)
+    );
+
+    // `r` on a disabled machine does nothing.
+    let mut outcome = ClientShellInput::default();
+    assert!(state.route_settings_key(
+        &crate::input::TerminalKey::new(KeyCode::Char('r'), KeyModifiers::NONE),
+        &mut outcome,
+    ));
+    assert!(outcome.actions.is_empty());
+
+    // Enter again re-enables it.
+    let mut outcome = ClientShellInput::default();
+    assert!(state.route_settings_key(
+        &crate::input::TerminalKey::new(KeyCode::Enter, KeyModifiers::NONE),
+        &mut outcome,
+    ));
+    assert!(matches!(
+        &outcome.actions[..],
+        [ClientShellAction::SetMachineEnabled { enabled: true, .. }]
+    ));
+    assert_eq!(
+        state.endpoint_status(&remote),
+        Some(ClientEndpointStatus::Connecting)
+    );
+}
+
+#[test]
+fn settings_machines_section_renders_rows_and_takes_taps() {
+    let (mut state, remote) = state_with_remote();
+    state.set_endpoint_status(&remote, ClientEndpointStatus::Reconnecting);
+    state.open_settings_overlay();
+    let mut outcome = ClientShellInput::default();
+    state.select_settings_section(ClientSettingsSection::Machines, &mut outcome);
+    let frame = state.compose(100, 28).expect("settings overlay frame");
+    let buffer = frame.to_ratatui_buffer().unwrap();
+    let text = buffer
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(text.contains("Build"));
+    assert!(text.contains("reconnecting"));
+    assert!(text.contains("r retry"));
+
+    // A tap on the row toggles it, like the immediate settings sections.
+    let row = state.hits.settings_choices[0].0;
+    let outcome =
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: row.x + 2,
+            row: row.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    assert!(matches!(
+        &outcome.actions[..],
+        [ClientShellAction::SetMachineEnabled { enabled: false, .. }]
+    ));
+    assert_eq!(
+        state.endpoint_status(&remote),
+        Some(ClientEndpointStatus::Disabled)
+    );
+}

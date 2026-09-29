@@ -79,6 +79,23 @@ impl ClientContextMenuOverlay {
                 ]);
                 items
             }
+            ClientContextMenuTarget::Machine {
+                enabled, retryable, ..
+            } => {
+                let mut items = Vec::new();
+                if *retryable {
+                    items.push(item("Retry connection", Action::RetryMachineConnection));
+                }
+                items.push(item(
+                    if *enabled {
+                        "Disable connection"
+                    } else {
+                        "Enable connection"
+                    },
+                    Action::ToggleMachineEnabled,
+                ));
+                items
+            }
         }
     }
 }
@@ -167,6 +184,43 @@ impl ClientShellState {
         }));
     }
 
+    pub(super) fn open_machine_context_menu(
+        &mut self,
+        endpoint_id: ClientEndpointId,
+        x: u16,
+        y: u16,
+    ) {
+        // Local has no catalog entry: it cannot be disabled or retried.
+        if endpoint_id.is_local() {
+            return;
+        }
+        let Some(status) = self
+            .endpoints
+            .iter()
+            .find(|endpoint| endpoint.endpoint_id == endpoint_id)
+            .map(|endpoint| endpoint.status)
+        else {
+            return;
+        };
+        let enabled = status != ClientEndpointStatus::Disabled;
+        let retryable = matches!(
+            status,
+            ClientEndpointStatus::Connecting
+                | ClientEndpointStatus::Reconnecting
+                | ClientEndpointStatus::Attention
+        );
+        self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
+            target: ClientContextMenuTarget::Machine {
+                endpoint_id,
+                enabled,
+                retryable,
+            },
+            x,
+            y,
+            highlighted: 0,
+        }));
+    }
+
     pub(super) fn move_context_menu_selection(&mut self, delta: isize) {
         let Some(ClientShellOverlay::ContextMenu(menu)) = self.overlay.as_mut() else {
             return;
@@ -215,8 +269,28 @@ impl ClientShellState {
                 action,
                 outcome,
             ),
+            ClientContextMenuTarget::Machine { endpoint_id, .. } => {
+                self.activate_machine_context_action(endpoint_id, action, outcome)
+            }
         }
         outcome.repaint = true;
+    }
+
+    fn activate_machine_context_action(
+        &mut self,
+        endpoint_id: ClientEndpointId,
+        action: ClientContextMenuAction,
+        outcome: &mut ClientShellInput,
+    ) {
+        match action {
+            ClientContextMenuAction::RetryMachineConnection => {
+                self.retry_machine_connection(&endpoint_id, outcome);
+            }
+            ClientContextMenuAction::ToggleMachineEnabled => {
+                self.toggle_machine_enabled(&endpoint_id, outcome);
+            }
+            _ => {}
+        }
     }
 
     fn activate_workspace_context_action(
