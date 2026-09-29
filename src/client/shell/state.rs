@@ -252,6 +252,13 @@ pub(crate) enum ClientShellAction {
         endpoint_id: ClientEndpointId,
         target: Option<ClientEndpointFocusTarget>,
     },
+    SetMachineEnabled {
+        profile_id: crate::client::endpoint::ProfileId,
+        enabled: bool,
+    },
+    RetryMachineConnection {
+        endpoint_id: ClientEndpointId,
+    },
     ReplayMouse(Vec<crossterm::event::MouseEvent>),
     Keybind(crate::input::KeybindAction),
 }
@@ -387,6 +394,7 @@ pub(super) enum ClientSettingsSection {
     Indicators,
     Sound,
     Toast,
+    Machines,
     Integrations,
 }
 
@@ -396,6 +404,7 @@ impl ClientSettingsSection {
         Self::Indicators,
         Self::Sound,
         Self::Toast,
+        Self::Machines,
         Self::Integrations,
     ];
 
@@ -405,6 +414,7 @@ impl ClientSettingsSection {
             Self::Indicators => "indicators",
             Self::Sound => "sound",
             Self::Toast => "toasts",
+            Self::Machines => "machines",
             Self::Integrations => "integrations",
         }
     }
@@ -525,6 +535,8 @@ pub(super) enum ClientContextMenuAction {
     Zoom,
     ToggleRightClickPassthrough,
     ClosePane,
+    RetryMachineConnection,
+    ToggleMachineEnabled,
 }
 
 #[derive(Debug)]
@@ -547,6 +559,11 @@ pub(super) enum ClientContextMenuTarget {
         source_pane_id: Option<String>,
         has_manual_label: bool,
         right_click_passthrough: bool,
+    },
+    Machine {
+        endpoint_id: ClientEndpointId,
+        enabled: bool,
+        retryable: bool,
     },
 }
 

@@ -51,7 +51,7 @@ impl ClientShellState {
             ClientSettingsSection::Indicators => indicator_index(self.config.status_indicators),
             ClientSettingsSection::Sound => usize::from(!self.config.sound_enabled),
             ClientSettingsSection::Toast => toast_index(self.config.toast_delivery),
-            ClientSettingsSection::Integrations => 0,
+            ClientSettingsSection::Machines | ClientSettingsSection::Integrations => 0,
         }
     }
 
@@ -99,6 +99,7 @@ impl ClientShellState {
                 ClientSettingsSection::Theme => crate::config::THEME_NAMES.len(),
                 ClientSettingsSection::Indicators | ClientSettingsSection::Sound => 2,
                 ClientSettingsSection::Toast => 4,
+                ClientSettingsSection::Machines => self.settings_machines().count(),
                 ClientSettingsSection::Integrations => settings.integrations.len(),
             },
             _ => 0,
@@ -222,7 +223,34 @@ impl ClientShellState {
                     outcome,
                 );
             }
+            ClientSettingsSection::Machines => {
+                let endpoint_id = self
+                    .settings_machines()
+                    .nth(selected)
+                    .map(|endpoint| endpoint.endpoint_id.clone());
+                if let Some(endpoint_id) = endpoint_id {
+                    self.toggle_machine_enabled(&endpoint_id, outcome);
+                    outcome.repaint = true;
+                }
+            }
             ClientSettingsSection::Integrations => self.install_recommended_integrations(outcome),
+        }
+    }
+
+    pub(super) fn retry_selected_settings_machine(&mut self, outcome: &mut ClientShellInput) {
+        let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_ref() else {
+            return;
+        };
+        if settings.section != ClientSettingsSection::Machines {
+            return;
+        }
+        let endpoint_id = self
+            .settings_machines()
+            .nth(settings.selected)
+            .map(|endpoint| endpoint.endpoint_id.clone());
+        if let Some(endpoint_id) = endpoint_id {
+            self.retry_machine_connection(&endpoint_id, outcome);
+            outcome.repaint = true;
         }
     }
 
@@ -393,6 +421,10 @@ impl ClientShellState {
         }
         if matches!(code, KeyCode::Enter | KeyCode::Char(' ')) && modifiers.is_empty() {
             self.apply_settings_choice(outcome);
+            return true;
+        }
+        if code == KeyCode::Char('r') && modifiers.is_empty() {
+            self.retry_selected_settings_machine(outcome);
             return true;
         }
         true

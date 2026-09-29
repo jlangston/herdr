@@ -36,6 +36,7 @@ fn draw_choice(
 pub(super) fn render_settings_overlay(
     buffer: &mut Buffer,
     settings: &ClientSettingsOverlay,
+    endpoints: &[ClientShellEndpoint],
     integration_updates_available: bool,
     palette: &Palette,
 ) -> Option<OverlayRender> {
@@ -194,6 +195,16 @@ pub(super) fn render_settings_overlay(
                 &mut choice_hits,
             );
         }
+        ClientSettingsSection::Machines => {
+            render_machines(
+                buffer,
+                content,
+                settings,
+                endpoints,
+                palette,
+                &mut choice_hits,
+            );
+        }
         ClientSettingsSection::Integrations => {
             render_integrations(buffer, content, settings, palette);
         }
@@ -203,7 +214,14 @@ pub(super) fn render_settings_overlay(
         .integrations
         .iter()
         .any(super::super::settings::integration_needs_install);
-    let show_primary = settings.section != ClientSettingsSection::Integrations || installable;
+    let has_machines = endpoints
+        .iter()
+        .any(|endpoint| !endpoint.endpoint_id.is_local());
+    let show_primary = match settings.section {
+        ClientSettingsSection::Integrations => installable,
+        ClientSettingsSection::Machines => has_machines,
+        _ => true,
+    };
     let labels = if show_primary { vec![10, 12] } else { vec![12] };
     let buttons = row(inner, &labels, 2, inner.height.saturating_sub(1));
     let (primary, close) = if show_primary {
@@ -211,10 +229,10 @@ pub(super) fn render_settings_overlay(
         button(
             buffer,
             primary,
-            if settings.section == ClientSettingsSection::Integrations {
-                " ↵ install "
-            } else {
-                " ↵ apply "
+            match settings.section {
+                ClientSettingsSection::Integrations => " ↵ install ",
+                ClientSettingsSection::Machines => " ↵ toggle ",
+                _ => " ↵ apply ",
             },
             Style::default()
                 .fg(contrast(palette))
@@ -239,7 +257,11 @@ pub(super) fn render_settings_overlay(
         inner.x,
         inner.bottom().saturating_sub(2),
         inner.width,
-        " ↑↓ select  tab section",
+        if settings.section == ClientSettingsSection::Machines {
+            " ↑↓ select  tab section  ↵ enable/disable  r retry"
+        } else {
+            " ↑↓ select  tab section"
+        },
         Style::default().fg(palette.overlay1).bg(palette.panel_bg),
     );
 
@@ -252,6 +274,92 @@ pub(super) fn render_settings_overlay(
         settings_choices: choice_hits,
         ..OverlayRender::default()
     })
+}
+
+fn render_machines(
+    buffer: &mut Buffer,
+    area: Rect,
+    settings: &ClientSettingsOverlay,
+    endpoints: &[ClientShellEndpoint],
+    palette: &Palette,
+    choice_hits: &mut Vec<(Rect, usize)>,
+) {
+    put_text(
+        buffer,
+        area.x,
+        area.y,
+        area.width,
+        " machines",
+        Style::default()
+            .fg(palette.text)
+            .bg(palette.panel_bg)
+            .add_modifier(Modifier::BOLD),
+    );
+    put_text(
+        buffer,
+        area.x,
+        area.y + 1,
+        area.width,
+        " disable a machine to stop reconnect attempts without removing it",
+        Style::default().fg(palette.overlay1).bg(palette.panel_bg),
+    );
+    let machines: Vec<&ClientShellEndpoint> = endpoints
+        .iter()
+        .filter(|endpoint| !endpoint.endpoint_id.is_local())
+        .collect();
+    if machines.is_empty() {
+        put_text(
+            buffer,
+            area.x,
+            area.y + 3,
+            area.width,
+            " no machines · add one with: herdr machine add <ssh-target>",
+            Style::default().fg(palette.overlay1).bg(palette.panel_bg),
+        );
+        return;
+    }
+    let visible = usize::from(area.height.saturating_sub(3));
+    let scroll = settings.selected.saturating_sub(visible.saturating_sub(1));
+    for (visible_index, (index, machine)) in machines
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible)
+        .enumerate()
+    {
+        let rect = Rect::new(area.x, area.y + 3 + visible_index as u16, area.width, 1);
+        let selected = index == settings.selected;
+        let style = choice_style(selected, palette);
+        buffer.set_style(rect, style);
+        let marker = if selected { "▸" } else { " " };
+        put_text(
+            buffer,
+            rect.x,
+            rect.y,
+            rect.width,
+            &format!(" {marker} {}", machine.label),
+            style,
+        );
+        let (glyph, state_label, color) =
+            super::super::endpoints::endpoint_status_presentation(machine.status, palette);
+        let signal = format!("{glyph} {state_label} ");
+        let signal_width = display_width(&signal);
+        if rect.width > signal_width {
+            put_text(
+                buffer,
+                rect.right().saturating_sub(signal_width),
+                rect.y,
+                signal_width,
+                &signal,
+                if selected {
+                    style
+                } else {
+                    Style::default().fg(color).bg(palette.panel_bg)
+                },
+            );
+        }
+        choice_hits.push((rect, index));
+    }
 }
 
 fn render_choice_section(
