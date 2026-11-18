@@ -88,6 +88,40 @@ pub fn validate_resume_argv(argv: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Replaces the command word of a resume argv with the user-configured command
+/// for this agent, for example a shell alias that selects an account
+/// (`[session.resume_commands] claude = "cc-pli"`). Restore types the command
+/// into the restored pane's interactive shell, so the shell expands aliases
+/// and functions and direnv-style hooks have already run. A replacement that
+/// is not a bare command name is ignored, so a config typo cannot corrupt the
+/// typed input.
+pub fn apply_resume_command_override(
+    argv: &mut [String],
+    agent: &str,
+    overrides: &std::collections::BTreeMap<String, String>,
+) -> bool {
+    let Some(replacement) = overrides.get(agent) else {
+        return false;
+    };
+    let Some(command) = argv.first_mut() else {
+        return false;
+    };
+    if let Err(error) = validate_resume_argv(std::slice::from_ref(replacement)) {
+        tracing::warn!(
+            agent,
+            replacement,
+            %error,
+            "ignoring invalid session.resume_commands entry"
+        );
+        return false;
+    }
+    if command == replacement {
+        return false;
+    }
+    *command = replacement.clone();
+    true
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedAgentSession {
     pub source: String,
@@ -374,6 +408,41 @@ mod tests {
 
     fn argv(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|part| part.to_string()).collect()
+    }
+
+    #[test]
+    fn resume_command_override_swaps_only_the_command_word() {
+        let mut overrides = std::collections::BTreeMap::new();
+        overrides.insert("claude".to_string(), "cc-pli".to_string());
+
+        let mut resume = argv(&["claude", "--resume", "abc123"]);
+        assert!(apply_resume_command_override(
+            &mut resume,
+            "claude",
+            &overrides
+        ));
+        assert_eq!(resume, argv(&["cc-pli", "--resume", "abc123"]));
+
+        // Agents without an override keep their planned command.
+        let mut codex = argv(&["codex", "resume", "abc123"]);
+        assert!(!apply_resume_command_override(
+            &mut codex, "codex", &overrides
+        ));
+        assert_eq!(codex, argv(&["codex", "resume", "abc123"]));
+    }
+
+    #[test]
+    fn resume_command_override_rejects_non_command_replacements() {
+        for bad in ["cc pli", "/usr/bin/claude", "--flag", "cc'pli", ""] {
+            let mut overrides = std::collections::BTreeMap::new();
+            overrides.insert("claude".to_string(), bad.to_string());
+            let mut resume = argv(&["claude", "--resume", "abc123"]);
+            assert!(
+                !apply_resume_command_override(&mut resume, "claude", &overrides),
+                "replacement {bad:?} must be ignored"
+            );
+            assert_eq!(resume, argv(&["claude", "--resume", "abc123"]));
+        }
     }
 
     #[test]

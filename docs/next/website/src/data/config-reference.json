@@ -1447,6 +1447,12 @@
           "type": "integer",
           "default": "100",
           "description": "Milliseconds between automatic agent restores after a server restart. The first agent starts without this delay; 0 disables spacing. Does not delay manual launches or explicit terminal attaches. Restart the server to apply."
+        },
+        {
+          "key": "session.resume_commands",
+          "type": "table",
+          "default": "{}",
+          "description": "Replacement command words for restored agent resume commands, keyed by agent id (for example claude = \"cc-pli\"). The restored pane's shell expands the word, so aliases and shell functions that select an account or environment work. Values must be bare command names; invalid entries are ignored."
         }
       ]
     },
