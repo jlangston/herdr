@@ -238,6 +238,19 @@ impl App {
             return false;
         }
 
+        let mut plan = plan;
+        if crate::agent_resume::apply_resume_command_override(
+            &mut plan.argv,
+            &plan.agent,
+            &self.agent_resume_commands,
+        ) {
+            tracing::info!(
+                pane = pane_id.raw(),
+                agent = %plan.agent,
+                command = %plan.argv[0],
+                "resuming agent with configured command"
+            );
+        }
         let Some(resume_command) = shell_command_from_argv(&plan.argv) else {
             tracing::warn!(
                 pane = pane_id.raw(),

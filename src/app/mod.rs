@@ -143,6 +143,7 @@ pub struct App {
     pub(crate) pending_host_appearance_deadline: Option<Instant>,
     pane_host_appearance: Option<crate::terminal_theme::HostAppearance>,
     startup_per_agent_delay: Duration,
+    agent_resume_commands: std::collections::BTreeMap<String, String>,
     next_agent_resume_at: Option<Instant>,
     pub(crate) session_save_deadline: Option<Instant>,
     pub(crate) session_save_thread: Option<std::thread::JoinHandle<()>>,
@@ -659,6 +660,7 @@ impl App {
             startup_per_agent_delay: Duration::from_millis(
                 config.session.startup_per_agent_delay_ms.into(),
             ),
+            agent_resume_commands: config.session.resume_commands.clone(),
             next_agent_resume_at: None,
             session_save_deadline: None,
             session_save_thread: None,

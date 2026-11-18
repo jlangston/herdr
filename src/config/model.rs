@@ -283,6 +283,11 @@ pub struct SessionConfig {
     pub resume_agents_on_restore: bool,
     /// Milliseconds between automatic agent restores. Zero disables spacing.
     pub startup_per_agent_delay_ms: u32,
+    /// Replacement command words for restored agent resume commands, keyed by
+    /// agent id (for example `claude = "cc-pli"`). The restored pane's shell
+    /// expands the word, so aliases and shell functions work. Values must be
+    /// bare command names; anything else is ignored.
+    pub resume_commands: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for SessionConfig {
@@ -290,6 +295,7 @@ impl Default for SessionConfig {
         Self {
             resume_agents_on_restore: true,
             startup_per_agent_delay_ms: 100,
+            resume_commands: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -1783,6 +1789,22 @@ copy_on_select = false
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert!(!config.ui.copy_on_select);
+    }
+
+    #[test]
+    fn session_resume_commands_parse_and_default_empty() {
+        assert!(Config::default().session.resume_commands.is_empty());
+
+        let parsed: Config =
+            toml::from_str("[session.resume_commands]\nclaude = \"cc-pli\"\n").unwrap();
+        assert_eq!(
+            parsed
+                .session
+                .resume_commands
+                .get("claude")
+                .map(String::as_str),
+            Some("cc-pli")
+        );
     }
 
     #[test]

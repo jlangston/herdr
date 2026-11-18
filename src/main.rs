@@ -406,6 +406,12 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Milliseconds between automatic agent restores; 0 starts them without spacing.
 # startup_per_agent_delay_ms = 100
 
+# Replace the command word typed to resume an agent, per agent id. The restored
+# pane's shell expands it, so aliases and shell functions work (for example an
+# alias that selects the right account). Values must be bare command names.
+# [session.resume_commands]
+# claude = "cc-pli"
+
 [remote]
 # Whether herdr manages the ssh config used for `herdr --remote`.
 # When true (default), herdr runs remote ssh through a generated config that
